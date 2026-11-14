@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { binding, HttpStore, PreconditionError, validateConfig, type Config } from "../src/provider";
+import { binding, HttpStore, PreconditionError, StorageNetworkError, validateConfig, type Config } from "../src/provider";
+import { ImmutableS3Store } from "../src/immutable-s3";
 import { storageServer } from "./http-server";
 
 export const config: Config = {
@@ -68,6 +69,27 @@ test("auth/permission errors never masquerade as an empty remote dataset", async
   server.options.status = 403;
   await assert.rejects(store.get("head.json"), /403/);
   await assert.rejects(store.put("head.json", "data", null), /403/);
+});
+
+test("fetch rejections expose network diagnostics rather than inventing an authentication failure", async () => {
+  const failure = new TypeError("fetch failed");
+  const fetcher: typeof fetch = async () => { throw failure; };
+  const s3 = { ...config, provider: "s3" as const };
+  const reads = [
+    () => new HttpStore(config, secrets, fetcher).get("head.json"),
+    () => new HttpStore(s3, secrets, fetcher).get("head.json"),
+    () => new ImmutableS3Store(s3, secrets, fetcher).list(),
+  ];
+  for (const read of reads) {
+    await assert.rejects(read(), (error: unknown) => {
+      assert.ok(error instanceof StorageNetworkError);
+      assert.equal(error.cause, failure);
+      assert.match(error.message, /CORS\/preflight/);
+      assert.ok(!error.message.includes(secrets.password));
+      assert.ok(!error.message.includes(secrets.secretAccessKey));
+      return true;
+    });
+  }
 });
 
 test("endpoint policy blocks embedded secrets, insecure public HTTP and unsafe prefixes", () => {

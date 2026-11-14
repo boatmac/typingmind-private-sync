@@ -2,7 +2,7 @@ import { AwsClient } from "aws4fetch";
 import { XMLParser, XMLValidator } from "fast-xml-parser";
 import { sha256 } from "./codec";
 import type { ImmutableStore } from "./immutable-log";
-import { validateConfig, type Config, type Secrets } from "./provider";
+import { StorageNetworkError, validateConfig, type Config, type Secrets } from "./provider";
 
 const idPattern = /^[0-9a-f]{64}$/;
 const parser = new XMLParser({
@@ -43,7 +43,11 @@ export class ImmutableS3Store implements ImmutableStore {
       redirect: "error", referrerPolicy: "no-referrer", signal: AbortSignal.timeout(60_000),
       aws: { allHeaders: true },
     });
-    return this.fetcher(request);
+    try {
+      return await this.fetcher(request);
+    } catch (error) {
+      throw new StorageNetworkError(url.href, error);
+    }
   }
 
   private url(id: string): URL {

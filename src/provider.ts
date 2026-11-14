@@ -29,6 +29,15 @@ export class PreconditionError extends Error {
   }
 }
 
+export class StorageNetworkError extends Error {
+  constructor(url: string, cause: unknown) {
+    super(`Storage network request failed (${new URL(url).hostname}). No HTTP response was available to the extension. ` +
+      "Check CORS/preflight, TLS certificates and connectivity. " +
+      "This does not establish that the password or encryption passphrase is wrong.", { cause });
+    this.name = "StorageNetworkError";
+  }
+}
+
 export function validateConfig(config: Config): URL {
   const url = new URL(config.endpoint);
   if (url.protocol !== "https:" &&
@@ -95,7 +104,11 @@ export class HttpStore implements ObjectStore {
     };
     const request = this.aws ? await this.aws.sign(url, { ...init, aws: { allHeaders: true } }) :
       new Request(url, init);
-    return this.fetcher(request);
+    try {
+      return await this.fetcher(request);
+    } catch (error) {
+      throw new StorageNetworkError(url, error);
+    }
   }
 
   private path(key: string): string {

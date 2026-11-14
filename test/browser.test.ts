@@ -63,6 +63,8 @@ test("built browser extension syncs two profiles through WebDAV, S3 and the scop
   } = {}) => {
     await page.addScriptTag({ url: url + "/extension.js" });
     await page.getByRole("button", { name: "Private Sync", exact: true }).click();
+    assert.equal(await page.locator("#sync").isDisabled(), true);
+    assert.equal(await page.locator("#test").isDisabled(), true);
     await page.locator("#provider").selectOption("webdav");
     await page.locator("#endpoint").fill(options.endpoint ?? storage.url + "/dav/");
     await page.locator("#prefix").fill(options.prefix ?? "typingmind-private");
@@ -70,13 +72,48 @@ test("built browser extension syncs two profiles through WebDAV, S3 and the scop
     await page.locator("#dav-password").fill(options.password ?? "test-password");
     await page.locator("#passphrase").fill("browser-test-passphrase");
     await page.locator("#acknowledge").check();
+    assert.equal(await page.locator("#test").isDisabled(), true);
+    const requestsBeforeUnlock = storage.requests.length;
     await page.getByRole("button", { name: "Unlock / connect" }).click();
     await page.locator("#status").filter({ hasText: "Unlocked" }).waitFor();
     assert.equal(await page.locator("#passphrase").inputValue(), "");
+    assert.equal(await page.locator("#dav-password").inputValue(), "");
+    assert.equal(await page.locator("#passphrase").isDisabled(), true);
+    assert.equal(await page.locator("#dav-password").isDisabled(), true);
+    assert.equal(await page.locator("#connect").isDisabled(), true);
+    assert.match(await page.locator("#session-state").innerText(), /Session unlocked.*in memory/);
+    assert.equal(storage.requests.length, requestsBeforeUnlock);
   };
   await pageA.goto(url);
   await seed(pageA, true);
   await unlock(pageA);
+  const storageRoute = storage.url + "/**";
+  await pageA.route(storageRoute, (route) => route.abort("failed"));
+  await pageA.getByRole("button", { name: "Test storage", exact: true }).click();
+  await pageA.locator("#status").filter({ hasText: "Storage network request failed" }).waitFor();
+  assert.match(await pageA.locator("#status").innerText(), /CORS\/preflight/);
+  assert.match(await pageA.locator("#session-state").innerText(), /Session unlocked/);
+  assert.equal(await pageA.locator("#passphrase").isDisabled(), true);
+  assert.equal(await pageA.locator("#test").isDisabled(), false);
+  await pageA.unroute(storageRoute);
+  await pageA.getByRole("button", { name: "Test storage", exact: true }).click();
+  await pageA.locator("#status").filter({ hasText: "Storage verified" }).waitFor();
+  assert.ok(storage.requests.every(({ headers }) =>
+    headers.authorization === "Basic " + btoa("test-user:test-password")));
+  storage.options.status = 401;
+  await pageA.getByRole("button", { name: "Test storage", exact: true }).click();
+  await pageA.locator("#status").filter({ hasText: "HTTP 401" }).waitFor();
+  assert.ok(!(await pageA.locator("#status").innerText()).includes("CORS/preflight"));
+  assert.match(await pageA.locator("#session-state").innerText(), /Session unlocked/);
+  storage.options.status = 0;
+  await pageA.getByRole("button", { name: "Change credentials / lock", exact: true }).click();
+  assert.equal(await pageA.locator("#test").isDisabled(), true);
+  assert.equal(await pageA.locator("#passphrase").isDisabled(), false);
+  assert.match(await pageA.locator("#session-state").innerText(), /Session locked/);
+  await pageA.locator("#dav-password").fill("test-password");
+  await pageA.locator("#passphrase").fill("browser-test-passphrase");
+  await pageA.getByRole("button", { name: "Unlock / connect", exact: true }).click();
+  await pageA.locator("#status").filter({ hasText: "Unlocked" }).waitFor();
   await pageA.getByRole("button", { name: "Sync now", exact: true }).click();
   try {
     await pageA.locator("#status").filter({ hasText: "Sync complete" }).waitFor({ timeout: 10_000 });
@@ -141,8 +178,8 @@ test("built browser extension syncs two profiles through WebDAV, S3 and the scop
   await pageA.locator("#prefix").fill("different-prefix");
   await pageA.locator("#status").filter({ hasText: "Settings changed" }).waitFor();
   const writes = storage.requests.filter(({ method }) => method === "PUT").length;
-  await pageA.getByRole("button", { name: "Sync now", exact: true }).click();
-  await pageA.locator("#status").filter({ hasText: "Unlock with credentials" }).waitFor();
+  assert.equal(await pageA.locator("#sync").isDisabled(), true);
+  assert.equal(await pageA.locator("#test").isDisabled(), true);
   assert.equal(storage.requests.filter(({ method }) => method === "PUT").length, writes);
 
   const gateway = await gatewayFixture({ origins: [url] });

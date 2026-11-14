@@ -54,6 +54,7 @@ function boot(): void {
       <p class="warning">Export an official TypingMind backup first. Use a test browser profile
         and dedicated storage prefix. This is not a verified replacement for official sync.</p>
       <p id="status" role="status" aria-live="polite">Locked. Credentials are kept in memory only.</p>
+      <p id="session-state" aria-live="polite"></p>
       <form id="settings" autocomplete="off">
         <label>Storage <select id="provider"><option value="webdav">WebDAV</option>
           <option value="s3">S3-compatible (path-style)</option></select></label>
@@ -91,6 +92,7 @@ function boot(): void {
           I have a backup, disabled official/other sync, closed other TypingMind tabs,
           and will not edit during manual sync/restore.</label>
         <button id="connect" type="submit">Unlock / connect</button>
+        <button id="edit-credentials" type="button">Change credentials / lock</button>
       </form>
       <small>Only endpoint settings and exclusions are saved. Credentials and passphrase
         must be entered after each reload. Preferences with nested credentials may still
@@ -153,6 +155,28 @@ function boot(): void {
   let busy = false;
   let needsReload = false;
   let timer: ReturnType<typeof setInterval> | undefined;
+  const secretIds = ["dav-password", "access-key", "secret-key", "session-token", "passphrase"] as const;
+  const updateControls = () => {
+    const unlocked = engine !== undefined;
+    for (const control of root.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | HTMLButtonElement>(
+      "input, select, textarea, button")) {
+      if (control.id !== "close") control.disabled = busy;
+    }
+    for (const id of ["sync", "test", "backup", "list", "restore", "rollback", "export",
+      "export-rollback", "import", "auto", "backups", "file", "prefer-local", "prefer-remote", "resolve-log"]) {
+      element<HTMLInputElement | HTMLSelectElement | HTMLButtonElement>(id).disabled = busy || !unlocked;
+    }
+    for (const id of secretIds) {
+      input(id).disabled = busy || unlocked;
+      input(id).placeholder = unlocked ? "Kept in memory for this session" : "";
+    }
+    element<HTMLButtonElement>("connect").disabled = busy || unlocked;
+    element<HTMLButtonElement>("edit-credentials").disabled = busy || !unlocked;
+    element("session-state").textContent = (unlocked
+      ? "Session unlocked. Secret fields are intentionally empty; credentials remain in memory. Use Change credentials / lock to edit them."
+      : "Session locked. Enter settings and credentials, confirm the checklist, then click Unlock / connect.") +
+      (needsReload ? " Reload TypingMind before further sync or restore operations." : "");
+  };
   const stop = () => {
     input("auto").checked = false;
     if (timer !== undefined) clearInterval(timer);
@@ -169,6 +193,7 @@ function boot(): void {
     engine = undefined;
     provider = undefined;
     clearConflicts();
+    updateControls();
   };
   const previewVersion = async (text: string | null): Promise<string> => {
     if (text === null) return "This version deletes the record.";
@@ -233,9 +258,7 @@ function boot(): void {
   const run = async (action: () => Promise<string>): Promise<void> => {
     if (busy) { status("Another Private Sync operation is running.", true); return; }
     busy = true;
-    const controls = [...root.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | HTMLButtonElement>(
-      "input, select, textarea, button")].filter((control) => control.id !== "close");
-    for (const control of controls) control.disabled = true;
+    updateControls();
     try {
       if (!navigator.locks) throw new Error("This browser must support the Web Locks API.");
       await navigator.locks.request("typingmind-private-sync", { ifAvailable: true }, async (lock) => {
@@ -248,7 +271,7 @@ function boot(): void {
       await report(error);
     } finally {
       busy = false;
-      for (const control of controls) control.disabled = false;
+      updateControls();
     }
   };
   const active = (): Engine | ImmutableEngine => {
@@ -348,7 +371,7 @@ function boot(): void {
       localStorage.setItem(configKey, JSON.stringify({ ...config, protocol, dataset }));
       provider = nextProvider;
       engine = nextEngine;
-      for (const id of ["dav-password", "access-key", "secret-key", "session-token", "passphrase"]) input(id).value = "";
+      for (const id of secretIds) input(id).value = "";
       clearConflicts();
       return "Unlocked. No app data changed. Test storage, then run manual sync.";
     });
@@ -365,13 +388,16 @@ function boot(): void {
   element("reload").onclick = () => {
     if (!busy && window.confirm("Reload TypingMind? Wait for any model response to finish first.")) location.reload();
   };
-  element("lock").onclick = () => {
+  const lockSession = () => {
     if (busy) { status("Wait for the running operation before locking.", true); return; }
     stop();
     forgetSession();
-    for (const id of ["dav-password", "access-key", "secret-key", "session-token", "passphrase"]) input(id).value = "";
-    status(needsReload ? "Locked. Reload required before continuing." : "Locked. Session credentials discarded.");
+    for (const id of secretIds) input(id).value = "";
+    status(needsReload ? "Locked. Reload required before continuing." :
+      "Locked. Session credentials discarded. Re-enter credentials and click Unlock / connect.");
   };
+  element("lock").onclick = lockSession;
+  element("edit-credentials").onclick = lockSession;
   element("sync").onclick = () => { void sync(); };
   element("prefer-local").onclick = () => { void sync("local"); };
   element("prefer-remote").onclick = () => { void sync("remote"); };
@@ -445,6 +471,7 @@ function boot(): void {
       void report(error);
     }
   };
+  updateControls();
 }
 
 if (typeof window !== "undefined" && !new URLSearchParams(location.search).has("safe_mode")) {
