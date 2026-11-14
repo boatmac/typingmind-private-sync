@@ -4,6 +4,16 @@
 
 **实验性软件，不要直接用于正式聊天或作为唯一备份。** 日常使用 S3 同步不需要安装 Node.js 或运行本地服务；Node.js 仅用于开发和构建。某些 WebDAV 服务可能需要自行部署网关，但网关不能修复存储服务缺少安全条件写的问题。
 
+## 试用安装地址
+
+```text
+https://boatmac.github.io/typingmind-private-sync/typingmind-private-sync.js
+```
+
+先在隔离浏览器配置中准备虚构聊天，再将上述 URL 添加到 TypingMind 的 **Preferences → Advanced Settings → Extensions** 并刷新。看到右下角 **Private Sync** 后，按下文配置和试用；不要直接连接正式聊天。
+
+此地址只托管扩展代码，不接收聊天或凭据。更新仍需手动运行 Pages 工作流；push 本身不会更新已部署脚本。若异常，移除扩展 URL 并刷新即可停止后续加载，但不会撤销已同步的数据。
+
 ## 两种同步协议
 
 | 协议 | 适用存储 | 并发保护 |
