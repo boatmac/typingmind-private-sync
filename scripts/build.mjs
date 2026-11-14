@@ -1,7 +1,8 @@
 import { build } from "esbuild";
-import { lstat, mkdir, readdir } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { argv } from "node:process";
+import { URL } from "node:url";
 
 const pages = argv.includes("--pages");
 const directory = pages ? "pages-dist" : "dist";
@@ -18,6 +19,9 @@ if (pages) {
   }
 }
 
+const notices = await readFile(new URL("../THIRD_PARTY_NOTICES", import.meta.url), "utf8");
+const footer = { js: `/*! ${notices.trim()}\n*/` };
+
 await build({
   entryPoints: ["src/extension.ts"],
   outfile: join(directory, filename),
@@ -26,6 +30,7 @@ await build({
   target: ["es2022"],
   sourcemap: !pages,
   legalComments: "eof",
+  footer,
 });
 console.log(`Built ${join(directory, filename)}`);
 
@@ -38,6 +43,7 @@ if (!pages) {
     format: "esm",
     target: ["node24"],
     sourcemap: true,
+    footer,
   });
   console.log("Built dist/koofr-gateway.mjs");
 }

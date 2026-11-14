@@ -23,6 +23,8 @@ test("Pages build publishes only the extension without gateway, source maps or l
   assert.deepEqual(await readdir(output), ["typingmind-private-sync.js"]);
   const bundle = await readFile(join(output, "typingmind-private-sync.js"), "utf8");
   assert.doesNotMatch(bundle, /sourceMappingURL|private gateway fixture|private credential fixture/);
+  const notices = await readFile(new URL("../THIRD_PARTY_NOTICES", import.meta.url), "utf8");
+  assert.ok(bundle.includes(notices.trim()), "The public bundle must retain complete dependency license notices.");
 });
 
 test("Pages build refuses unexpected existing output instead of publishing or deleting it", async (t) => {

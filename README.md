@@ -51,6 +51,8 @@ npm run build:pages
 
 `pages-dist` 中只生成扩展 JS，不包含 source map、网关、配置文件或测试记录。目录内出现其他文件或链接时会停止，不会自动删除它们。
 
+扩展和网关构建文件保留完整的第三方依赖许可证，源文本见 `THIRD_PARTY_NOTICES`。
+
 仓库提供手动 GitHub Pages 工作流：
 
 1. 在 **Settings → Pages → Build and deployment → Source** 选择 **GitHub Actions**。
