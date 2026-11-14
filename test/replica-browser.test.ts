@@ -86,7 +86,7 @@ test("Chromium replicas persist causal parents, paginate S3 and recover upload/a
   await a.evaluate(() => window.ReplicaFixture.reset());
   await a.evaluate(() => window.ReplicaFixture.edit("CHAT_retry", "retry"));
   await a.evaluate(() => window.ReplicaFixture.failUpload());
-  await assert.rejects(a.evaluate(() => window.ReplicaFixture.publish()), /connection lost/);
+  await assert.rejects(a.evaluate(() => window.ReplicaFixture.publish()), /Storage network request failed/);
   const retriesBefore = [...storage.objects].filter(([key]) => key.includes("/browser-retry/commits/"));
   assert.equal(retriesBefore.length, 1);
   await connect(a, "browser-retry");
