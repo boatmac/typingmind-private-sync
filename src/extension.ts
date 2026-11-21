@@ -29,22 +29,29 @@ function boot(): void {
   const root = host.attachShadow({ mode: "open" });
   root.innerHTML = `
     <style>
-      :host { all: initial; font: 14px system-ui, sans-serif; color: #eee; }
+      :host { all: initial; display: block; position: fixed; top: 0; left: 0;
+        width: 0; height: 0; z-index: 2147483646;
+        font: 14px system-ui, sans-serif; color: #eee; }
       button, input, select { font: inherit; }
       button { cursor: pointer; border: 1px solid #777; border-radius: 6px;
         background: #30343b; color: #fff; padding: 8px; }
       button:disabled { opacity: .5; cursor: default; }
-      #launcher { position: fixed; bottom: 12px; right: 12px; z-index: 2147483646; }
+      #launcher { position: fixed; bottom: max(12px, env(safe-area-inset-bottom));
+        right: max(12px, env(safe-area-inset-right)); max-width: calc(100vw - 24px);
+        overflow-wrap: anywhere; z-index: 2147483646; }
       dialog { background: #202329; color: #eee; border: 1px solid #777; border-radius: 12px;
-        width: min(620px, calc(100vw - 48px)); max-height: 85dvh; padding: 18px; }
+        box-sizing: border-box; width: min(620px, calc(100vw - 24px));
+        max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px);
+        padding: 18px; overflow: auto; }
       dialog::backdrop { background: #0009; }
       h2 { margin: 0 0 12px; font-size: 19px; }
       label { display: block; margin: 9px 0; }
-      input:not([type=checkbox]), select { box-sizing: border-box; width: 100%; padding: 7px;
+      input:not([type=checkbox]), select { box-sizing: border-box; width: 100%; min-width: 0; padding: 7px;
         background: #11151b; color: #fff; border: 1px solid #777; border-radius: 4px; }
       .actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
       p, pre { line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
-      #status { border-left: 3px solid #e6b84a; padding: 9px; }
+      #status { position: sticky; top: 0; z-index: 1; background: #202329;
+        border-left: 3px solid #e6b84a; padding: 9px; }
       .warning { color: #ffd68a; }
       small { color: #bbb; }
     </style>
@@ -58,7 +65,7 @@ function boot(): void {
       <form id="settings" autocomplete="off">
         <label>Storage <select id="provider"><option value="webdav">WebDAV</option>
           <option value="s3">S3-compatible (path-style)</option></select></label>
-        <label>Sync protocol <select id="protocol">
+        <label>Sync protocol (selected by storage) <select id="protocol" disabled>
           <option value="snapshot">Snapshot (requires atomic conditional writes)</option>
           <option value="immutable">Immutable S3 log (experimental concurrent sync)</option></select></label>
         <div id="immutable-fields" hidden>
@@ -125,6 +132,7 @@ function boot(): void {
       </div>
       <div id="log-conflicts" hidden>
         <p>Choose one version for each record. Deleted versions remove the record.
+          Selecting a version only previews it; Resolve selected versions and sync publishes your choices.
           All original encrypted commits remain in history.</p>
         <div id="log-versions"></div>
         <button id="resolve-log" type="button">Resolve selected versions and sync</button>
@@ -176,6 +184,7 @@ function boot(): void {
       input(id).placeholder = unlocked ? "Kept in memory for this session" : "";
     }
     element<HTMLButtonElement>("connect").disabled = busy || unlocked;
+    element<HTMLSelectElement>("protocol").disabled = true;
     element<HTMLButtonElement>("edit-credentials").disabled = busy || !unlocked;
     element("session-state").textContent = (unlocked
       ? "Session unlocked. Secret fields are intentionally empty; credentials remain in memory. Use Change credentials / lock to edit them."
@@ -224,6 +233,9 @@ function boot(): void {
     }
     if (error instanceof ReplicaConflictError) {
       clearConflicts();
+      status(`${error.view.conflicts.length} record conflict(s) need review. Incoming data has not been applied. ` +
+        "A new device's existing/default records can conflict with remote records. " +
+        "Review the versions below; no version is selected automatically.", true);
       reviewedConflict = error.view;
       element("log-conflicts").hidden = false;
       for (const conflict of error.view.conflicts) {
@@ -306,6 +318,11 @@ function boot(): void {
   });
 
   const switchFields = () => {
+    const protocol = value("provider") === "s3" ? "immutable" : "snapshot";
+    input("protocol").value = protocol;
+    for (const option of element<HTMLSelectElement>("protocol").options) {
+      option.defaultSelected = option.value === protocol;
+    }
     element("dav-fields").hidden = value("provider") !== "webdav";
     element("s3-fields").hidden = value("provider") !== "s3";
     element("immutable-fields").hidden = value("protocol") !== "immutable";
@@ -314,23 +331,32 @@ function boot(): void {
     input("dataset").pattern = value("protocol") === "immutable" ? "[a-zA-Z0-9_-]+" : ".*";
   };
   element("provider").onchange = switchFields;
-  element("protocol").onchange = switchFields;
   element("new-dataset").onclick = () => {
     stop();
     forgetSession();
     input("dataset").value = crypto.randomUUID();
     status("New dataset ID generated. Copy it to every device; unlock with credentials again.");
   };
-  try {
-    const saved: Partial<Config & { protocol: string; dataset: string }> = JSON.parse(localStorage.getItem(configKey) ?? "{}");
-    for (const id of ["provider", "endpoint", "prefix", "username", "bucket", "region", "protocol", "dataset"] as const) {
-      if (typeof saved[id] === "string") input(id).value = saved[id];
+  const restoreSettings = () => {
+    try {
+      const saved: Partial<Config & { protocol: string; dataset: string }> = JSON.parse(localStorage.getItem(configKey) ?? "{}");
+      for (const id of ["provider", "endpoint", "prefix", "username", "bucket", "region", "dataset"] as const) {
+        if (typeof saved[id] === "string") input(id).value = saved[id];
+      }
+      if (saved.exclusions) element<HTMLTextAreaElement>("exclusions").value = saved.exclusions.join("\n");
+      switchFields();
+      if (saved.provider === "s3" && saved.protocol === "snapshot") {
+        status("The saved S3 Snapshot configuration is no longer supported. S3 uses Immutable S3 log. " +
+          "Review the dedicated prefix and shared dataset ID, then unlock again. Existing snapshots are not migrated.", true);
+      }
+    } catch (error) {
+      void report(new Error("Cannot read saved Private Sync configuration. Re-enter settings.", { cause: error }));
     }
-    if (saved.exclusions) element<HTMLTextAreaElement>("exclusions").value = saved.exclusions.join("\n");
-    switchFields();
-  } catch (error) {
-    void report(new Error("Cannot read saved Private Sync configuration. Re-enter settings.", { cause: error }));
-  }
+  };
+  restoreSettings();
+  window.addEventListener("pageshow", (event) => {
+    if (!event.persisted && !engine && !busy) restoreSettings();
+  });
 
   element<HTMLFormElement>("settings").onsubmit = (event) => {
     event.preventDefault();
@@ -351,7 +377,7 @@ function boot(): void {
         password: value("dav-password"), accessKeyId: value("access-key"),
         secretAccessKey: value("secret-key"), sessionToken: value("session-token"),
       };
-      const protocol = value("protocol");
+      const protocol = type === "s3" ? "immutable" : "snapshot";
       const dataset = value("dataset").trim();
       const vault = new Vault(value("passphrase"));
       const data = new BrowserData(indexedDB, localStorage, config.exclusions);

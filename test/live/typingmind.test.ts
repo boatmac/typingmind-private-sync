@@ -96,10 +96,12 @@ async function waitResult(page: Page): Promise<string> {
 async function unlock(page: Page, endpoint: string, protocol: "snapshot" | "immutable" = "snapshot"): Promise<void> {
   await page.addScriptTag({ path: script });
   await page.getByRole("button", { name: "Private Sync", exact: true }).click();
+  await page.removeLocatorHandler(
+    page.locator("#headlessui-portal-root").getByText("Get a lifetime license", { exact: true }).first());
   await page.locator("#endpoint").fill(endpoint);
   if (protocol === "immutable") {
     await page.locator("#provider").selectOption("s3");
-    await page.locator("#protocol").selectOption("immutable");
+    assert.equal(await page.locator("#protocol").inputValue(), "immutable");
     await page.locator("#dataset").fill("live-immutable-dataset");
     await page.locator("#prefix").fill("live-immutable");
     await page.locator("#bucket").fill("test-bucket");
@@ -185,7 +187,7 @@ test(`live TypingMind officially exports a synthetic chat after ${protocol} sync
     await b.getByRole("button", { name: "Retry: keep remote conflicting records", exact: true }).click();
     status = await waitResult(b);
   }
-  if (protocol === "immutable" && status.includes("Concurrent record variants")) {
+  if (protocol === "immutable" && status.includes("record conflict(s) need review")) {
     for (const select of await b.locator("#log-versions select").all()) {
       const options = select.locator("option").filter({ hasText: immutableTip.slice(0, 10) });
       assert.equal(await options.count(), 1, "Every shared default conflict must offer the first device's version.");
@@ -200,6 +202,7 @@ test(`live TypingMind officially exports a synthetic chat after ${protocol} sync
   await openApp(b);
   assert.deepEqual(await readSyntheticChat(b), await readSyntheticChat(a),
     "Native typed records must survive an actual application reload.");
+  await dismissPromotions(b);
   await b.locator('[data-element-id="workspace-tab-settings"]').click();
   await b.getByText("Export", { exact: true }).first().waitFor();
   await b.getByText("Export", { exact: true }).first().click();

@@ -171,6 +171,8 @@ test("built browser extension syncs two profiles through WebDAV, S3 and the scop
   await pageA.locator("#status").filter({ hasText: "Locked." }).waitFor();
 
   await pageA.locator("#provider").selectOption("s3");
+  assert.equal(await pageA.locator("#protocol").inputValue(), "immutable");
+  await pageA.locator("#dataset").fill("browser-s3-dataset");
   await pageA.locator("#endpoint").fill(storage.url);
   await pageA.locator("#prefix").fill("browser-s3");
   await pageA.locator("#bucket").fill("test-bucket");
@@ -182,7 +184,7 @@ test("built browser extension syncs two profiles through WebDAV, S3 and the scop
   await pageA.getByRole("button", { name: "Sync now", exact: true }).click();
   await pageA.locator("#status").filter({ hasText: "Sync complete" }).waitFor();
   const signed = storage.requests.find(({ method, path }) =>
-    method === "PUT" && path === "/test-bucket/browser-s3/head.json");
+    method === "PUT" && path.startsWith("/test-bucket/browser-s3/commits/"));
   assert.match(String(signed?.headers.authorization), /^AWS4-HMAC-SHA256/);
 
   await pageA.locator("#prefix").fill("different-prefix");

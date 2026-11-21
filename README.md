@@ -18,10 +18,14 @@ https://boatmac.github.io/typingmind-private-sync/typingmind-private-sync.js
 
 | 协议 | 适用存储 | 并发保护 |
 |---|---|---|
-| Snapshot（默认） | WebDAV、S3 | 三方合并、删除标记和强 ETag 条件写；不支持条件写的服务会被拒绝 |
+| Snapshot | WebDAV | 三方合并、删除标记和强 ETag 条件写；不支持条件写的服务会被拒绝 |
 | Immutable S3 log（实验模式） | S3 | 加密、内容寻址的不可变提交与因果关系；同记录冲突必须明确选择版本 |
 
 日志模式不使用共享可变索引，也不依赖条件 PUT。同一记录的不同并发修改及删除/编辑冲突不会静默覆盖；不同记录的独立修改可以合并。恢复备份先只影响本地，后续同步才发布恢复结果。
+
+协议由 Storage 自动选择：S3 固定使用 Immutable S3 log，WebDAV 固定使用 Snapshot。旧的 S3 Snapshot 配置会提示重新确认并解锁，不会自动迁移已有快照。解锁成功后只保存非敏感配置，刷新后重新恢复协议和 dataset ID，但仍需重新输入凭据。
+
+新设备的本机默认设置或已有记录可能与远端同名记录冲突。出现冲突时，远端数据尚未应用到本机；必须逐项审核，不能假定某个版本一定是“正确”的。浮动按钮不占页面布局空间，操作状态固定显示在弹窗滚动区域顶部。
 
 ## 开发与验证
 
@@ -34,6 +38,15 @@ npm run check
 ```
 
 `check` 包含类型检查、ESLint、构建、单元测试、HTTP 集成测试和隔离 Chromium 测试。测试使用虚构数据与本机模拟存储，不使用个人存储凭据。
+
+可选的 WebKit 移动视口配置和布局回归（不等同于真实 iOS 设备验收）：
+
+```powershell
+npx playwright install webkit
+$env:TMPS_TEST_BROWSER = "webkit"
+npx tsx --test test\mobile-ui.test.ts
+Remove-Item Env:\TMPS_TEST_BROWSER
+```
 
 可选的真实 TypingMind 页面验收：
 
@@ -84,7 +97,7 @@ https://<GitHub-owner>.github.io/<repository>/typingmind-private-sync.js
 1. 在正式 TypingMind 中使用官方 **Settings → App data & storage → Export**，独立保存备份。不要清空日常浏览器数据。
 2. 新建隔离的浏览器配置，只创建少量虚构聊天和附件；关闭官方 Cloud Sync 和其他同步扩展。
 3. 在 **Preferences → Advanced Settings → Extensions** 添加托管脚本 URL，刷新页面。
-4. 点击右下角 **Private Sync**，选择存储和协议。所有设备必须使用相同的端点、bucket、专用 prefix、排除列表和加密口令。
+4. 点击右下角 **Private Sync**，选择存储；协议自动匹配。所有设备必须使用相同的端点、bucket、专用 prefix、排除列表和加密口令。
 5. 日志模式还需相同 dataset ID：只生成一次，复制到其他设备，不要每台设备单独生成。
 6. 点击 **Unlock / connect**，再运行 **Test storage**。日志模式此操作仅验证枚举和已有提交读取，不验证写入权限。
 7. 使用虚构数据手动 **Sync now**，在第二个隔离浏览器验证聊天、附件、修改、删除、冲突选择和备份恢复。
@@ -92,7 +105,7 @@ https://<GitHub-owner>.github.io/<repository>/typingmind-private-sync.js
 
 界面单独显示会话锁定状态。填完密码后仍需先点击 **Unlock / connect**，锁定时操作按钮不可用。解锁仅在本地建立会话，不验证远端连接；密码框会故意清空并禁用，凭据仍在本次会话内存中。需要修改密码时点击 **Change credentials / lock**，重新填写并解锁；更改其他连接设置也会锁定会话。网络失败不会自动丢弃会话：若仍显示 **Session unlocked**，无需重复填写密码即可重试。没有可读取 HTTP 响应时，应检查 CORS/预检、HTTPS 证书及网络，不能据此判定密码错误；重新填写密码也不会修复服务端兼容性问题。
 
-切换协议、存储、prefix 或 dataset ID 不会自动迁移数据。不要把已有日志当作快照数据集使用，也不要删除仍有设备依赖的提交历史。
+切换存储、prefix 或 dataset ID 不会自动迁移数据。不要把已有日志当作快照数据集使用，也不要删除仍有设备依赖的提交历史。
 
 ## S3 配置与权限
 

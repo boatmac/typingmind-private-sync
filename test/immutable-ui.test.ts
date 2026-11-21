@@ -45,7 +45,7 @@ async function finished(page: Page): Promise<string> {
   return page.locator("#status").innerText();
 }
 
-test("installed artifact exposes opt-in immutable sync, reviewed conflicts, remote backups and local recovery", { timeout: 120_000 }, async (t) => {
+test("installed artifact maps S3 to immutable sync, reviewed conflicts, remote backups and local recovery", { timeout: 120_000 }, async (t) => {
   const script = await readFile(new URL("../dist/typingmind-private-sync.js", import.meta.url));
   const storage = await storageServer();
   storage.options.listPageSize = 1;
@@ -78,7 +78,7 @@ test("installed artifact exposes opt-in immutable sync, reviewed conflicts, remo
     await page.addScriptTag({ url: url + "/extension.js" });
     await page.getByRole("button", { name: "Private Sync", exact: true }).click();
     await page.locator("#provider").selectOption("s3");
-    await page.locator("#protocol").selectOption("immutable");
+    assert.equal(await page.locator("#protocol").inputValue(), "immutable");
     await page.locator("#dataset").fill(dataset);
     await page.locator("#endpoint").fill(storage.url);
     await page.locator("#prefix").fill("ui-immutable");
@@ -122,7 +122,7 @@ test("installed artifact exposes opt-in immutable sync, reviewed conflicts, remo
   await chat(a, "CHAT_a", "only A");
   await chat(b, "CHAT_b", "only B");
   await Promise.all([sync(a), sync(b)]);
-  assert.match(await sync(b), /explicit resolution/);
+  assert.match(await sync(b), /record conflict\(s\) need review/);
   assert.equal(await b.locator("#conflicts").isVisible(), false);
   assert.equal(await b.locator("#log-conflicts").isVisible(), true);
   await b.getByRole("button", { name: "Resolve selected versions and sync" }).click();
@@ -176,16 +176,17 @@ test("installed artifact exposes opt-in immutable sync, reviewed conflicts, remo
   const writesBeforeWrongDataset = storage.requests.filter(({ method }) => method === "PUT").length;
   assert.match(await sync(b), /wrong dataset/);
   assert.equal(storage.requests.filter(({ method }) => method === "PUT").length, writesBeforeWrongDataset);
-  await b.locator("#protocol").selectOption("snapshot");
+  await b.locator("#provider").selectOption("webdav");
+  await b.locator("#endpoint").fill(storage.url + "/dav/");
   await b.locator("#prefix").fill("ui-legacy-unsafe");
-  await b.locator("#access-key").fill("ui-access");
-  await b.locator("#secret-key").fill("ui-secret");
+  await b.locator("#username").fill("ui-user");
+  await b.locator("#dav-password").fill("ui-password");
   await b.locator("#passphrase").fill(password);
   await b.getByRole("button", { name: "Unlock / connect" }).click();
   assert.match(await finished(b), /Unlocked/);
   await b.getByRole("button", { name: "Test storage", exact: true }).click();
   assert.match(await finished(b), /conditional writes are ignored/);
-  assert.ok(!storage.objects.has("/test-bucket/ui-legacy-unsafe/head.json"));
+  assert.ok(!storage.objects.has("/dav/ui-legacy-unsafe/head.json"));
   const settings = await b.evaluate(() => localStorage.getItem("tmps:config"));
   assert.ok(!settings?.includes("ui-secret"));
   assert.ok(!settings?.includes(password));
