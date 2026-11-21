@@ -66,6 +66,16 @@ test("built browser extension syncs two profiles through WebDAV, S3 and the scop
     assert.equal(await page.locator("#sync").isDisabled(), true);
     assert.equal(await page.locator("#test").isDisabled(), true);
     await page.locator("#provider").selectOption("webdav");
+    await page.evaluate(() => {
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "/" && !(event.target instanceof HTMLInputElement)) event.preventDefault();
+      });
+    });
+    await page.locator("#endpoint").fill("");
+    await page.locator("#endpoint").pressSequentially("https://storage.example/dav/");
+    assert.equal(await page.locator("#endpoint").inputValue(), "https://storage.example/dav/");
+    await page.locator("#dav-password").pressSequentially("fixture/password");
+    assert.equal(await page.locator("#dav-password").inputValue(), "fixture/password");
     await page.locator("#endpoint").fill(options.endpoint ?? storage.url + "/dav/");
     await page.locator("#prefix").fill(options.prefix ?? "typingmind-private");
     await page.locator("#username").fill(options.username ?? "test-user");

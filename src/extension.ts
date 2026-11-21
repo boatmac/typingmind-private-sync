@@ -144,6 +144,11 @@ function boot(): void {
   const input = (id: string) => element<HTMLInputElement>(id);
   const value = (id: string) => input(id).value;
   const dialog = root.querySelector("dialog")!;
+  for (const type of ["keydown", "keypress", "keyup"]) {
+    root.addEventListener(type, (event) => {
+      if (event.composedPath().includes(dialog)) event.stopPropagation();
+    });
+  }
   const status = (message: string, error = false) => {
     element("status").textContent = message;
     element("launcher").textContent = error ? "Private Sync - attention" : "Private Sync";
